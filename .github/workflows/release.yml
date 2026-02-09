@@ -1,0 +1,163 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.get_version.outputs.VERSION }}
+      checksum_11: ${{ steps.build_11.outputs.CHECKSUM_11 }}
+      checksum_10: ${{ steps.build_10.outputs.CHECKSUM_10 }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: |
+            8.0.x
+            9.0.x
+
+      - name: Extract version from tag
+        id: get_version
+        run: |
+          VERSION=${GITHUB_REF#refs/tags/v}
+          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+          echo "Extracted version: $VERSION"
+
+      - name: Build for Jellyfin 10.11 (net9.0)
+        id: build_11
+        run: |
+          VERSION=${{ steps.get_version.outputs.VERSION }}
+          VER_SUB="${VERSION}.11"
+          echo "Building version $VER_SUB for Jellyfin 10.11"
+          
+          # Update version in csproj
+          sed -i "s/<AssemblyVersion>[^<]*<\/AssemblyVersion>/<AssemblyVersion>$VER_SUB<\/AssemblyVersion>/g" src/Jellyfin.Plugin.JellyBridge/JellyBridge.csproj
+          sed -i "s/<FileVersion>[^<]*<\/FileVersion>/<FileVersion>$VER_SUB<\/FileVersion>/g" src/Jellyfin.Plugin.JellyBridge/JellyBridge.csproj
+          sed -i "s/<JellyfinVersion>[^<]*<\/JellyfinVersion>/<JellyfinVersion>10.11.0<\/JellyfinVersion>/g" src/Jellyfin.Plugin.JellyBridge/JellyBridge.csproj
+          
+          # Build
+          dotnet build src/Jellyfin.Plugin.JellyBridge/JellyBridge.csproj -c Release
+          
+          # Create meta.json
+          echo '{"targetAbi": "10.11.0.0", "changelog": "Jellyfin 10.11.0 release"}' > meta.json
+          
+          # Create ZIP
+          mkdir -p artifacts
+          zip -j "artifacts/JellyBridge-$VER_SUB.zip" src/Jellyfin.Plugin.JellyBridge/bin/Release/net9.0/Jellyfin.Plugin.JellyBridge.dll meta.json
+          
+          # Calculate checksum
+          CHECKSUM=$(md5sum "artifacts/JellyBridge-$VER_SUB.zip" | cut -d' ' -f1)
+          echo "CHECKSUM_11=$CHECKSUM" >> $GITHUB_OUTPUT
+          echo "ZIP_11=JellyBridge-$VER_SUB.zip" >> $GITHUB_OUTPUT
+          echo "Built: JellyBridge-$VER_SUB.zip with checksum $CHECKSUM"
+
+      - name: Build for Jellyfin 10.10 (net8.0)
+        id: build_10
+        run: |
+          VERSION=${{ steps.get_version.outputs.VERSION }}
+          VER_SUB="${VERSION}.10"
+          echo "Building version $VER_SUB for Jellyfin 10.10"
+          
+          # Update version in csproj
+          sed -i "s/<AssemblyVersion>[^<]*<\/AssemblyVersion>/<AssemblyVersion>$VER_SUB<\/AssemblyVersion>/g" src/Jellyfin.Plugin.JellyBridge/JellyBridge.csproj
+          sed -i "s/<FileVersion>[^<]*<\/FileVersion>/<FileVersion>$VER_SUB<\/FileVersion>/g" src/Jellyfin.Plugin.JellyBridge/JellyBridge.csproj
+          sed -i "s/<JellyfinVersion>[^<]*<\/JellyfinVersion>/<JellyfinVersion>10.10.7<\/JellyfinVersion>/g" src/Jellyfin.Plugin.JellyBridge/JellyBridge.csproj
+          
+          # Clean and build
+          dotnet clean src/Jellyfin.Plugin.JellyBridge/JellyBridge.csproj
+          dotnet build src/Jellyfin.Plugin.JellyBridge/JellyBridge.csproj -c Release
+          
+          # Create meta.json
+          echo '{"targetAbi": "10.10.0.0", "changelog": "Jellyfin 10.10.7 release"}' > meta.json
+          
+          # Create ZIP
+          zip -j "artifacts/JellyBridge-$VER_SUB.zip" src/Jellyfin.Plugin.JellyBridge/bin/Release/net8.0/Jellyfin.Plugin.JellyBridge.dll meta.json
+          
+          # Calculate checksum
+          CHECKSUM=$(md5sum "artifacts/JellyBridge-$VER_SUB.zip" | cut -d' ' -f1)
+          echo "CHECKSUM_10=$CHECKSUM" >> $GITHUB_OUTPUT
+          echo "ZIP_10=JellyBridge-$VER_SUB.zip" >> $GITHUB_OUTPUT
+          echo "Built: JellyBridge-$VER_SUB.zip with checksum $CHECKSUM"
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: jellybridge-artifacts
+          path: artifacts/*.zip
+
+  update-manifest-and-release:
+    needs: build-and-release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: jellybridge-artifacts
+          path: artifacts
+
+      - name: Update manifest and create release
+        run: |
+          VERSION=${{ needs.build-and-release.outputs.version }}
+          TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%S.000Z")
+          CHECKSUM_11=${{ needs.build-and-release.outputs.checksum_11 }}
+          CHECKSUM_10=${{ needs.build-and-release.outputs.checksum_10 }}
+          
+          echo "Version: $VERSION"
+          echo "Checksum 10.11: $CHECKSUM_11"
+          echo "Checksum 10.10: $CHECKSUM_10"
+          
+          # Create new manifest entries using jq
+          jq --arg version "$VERSION" \
+             --arg timestamp "$TIMESTAMP" \
+             --arg checksum11 "$CHECKSUM_11" \
+             --arg checksum10 "$CHECKSUM_10" \
+             --arg repo "${{ github.repository }}" \
+             '.[0].versions = [
+               {
+                 "version": "\($version).11",
+                 "changelog": "Jellyfin 10.11.0: v\($version) - Release",
+                 "targetAbi": "10.11.0.0",
+                 "sourceUrl": "https://github.com/\($repo)/releases/download/v\($version)/JellyBridge-\($version).11.zip",
+                 "checksum": $checksum11,
+                 "timestamp": $timestamp,
+                 "dependencies": []
+               },
+               {
+                 "version": "\($version).10",
+                 "changelog": "Jellyfin 10.10.7: v\($version) - Release",
+                 "targetAbi": "10.10.0.0",
+                 "sourceUrl": "https://github.com/\($repo)/releases/download/v\($version)/JellyBridge-\($version).10.zip",
+                 "checksum": $checksum10,
+                 "timestamp": $timestamp,
+                 "dependencies": []
+               }
+             ] + .[0].versions' manifest.json > manifest.json.tmp && mv manifest.json.tmp manifest.json
+          
+          # Commit and push
+          git config user.name "GitHub Actions"
+          git config user.email "actions@github.com"
+          git add manifest.json
+          git commit -m "Release v${VERSION}"
+          git push
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: artifacts/*.zip
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
