@@ -46,8 +46,9 @@ jobs:
           sed -i "s/<FileVersion>[^<]*<\/FileVersion>/<FileVersion>$VER_SUB<\/FileVersion>/g" src/Jellyfin.Plugin.JellyBridge/JellyBridge.csproj
           sed -i "s/<JellyfinVersion>[^<]*<\/JellyfinVersion>/<JellyfinVersion>10.11.0<\/JellyfinVersion>/g" src/Jellyfin.Plugin.JellyBridge/JellyBridge.csproj
           
-          # Build
-          dotnet build src/Jellyfin.Plugin.JellyBridge/JellyBridge.csproj -c Release
+          # Restore and build
+          dotnet restore src/Jellyfin.Plugin.JellyBridge/JellyBridge.csproj
+          dotnet build src/Jellyfin.Plugin.JellyBridge/JellyBridge.csproj -c Release --no-restore
           
           # Create meta.json
           echo '{"targetAbi": "10.11.0.0", "changelog": "Jellyfin 10.11.0 release"}' > meta.json
@@ -74,9 +75,11 @@ jobs:
           sed -i "s/<FileVersion>[^<]*<\/FileVersion>/<FileVersion>$VER_SUB<\/FileVersion>/g" src/Jellyfin.Plugin.JellyBridge/JellyBridge.csproj
           sed -i "s/<JellyfinVersion>[^<]*<\/JellyfinVersion>/<JellyfinVersion>10.10.7<\/JellyfinVersion>/g" src/Jellyfin.Plugin.JellyBridge/JellyBridge.csproj
           
-          # Clean and build
-          dotnet clean src/Jellyfin.Plugin.JellyBridge/JellyBridge.csproj
-          dotnet build src/Jellyfin.Plugin.JellyBridge/JellyBridge.csproj -c Release
+          # Clean, restore and build
+          rm -rf src/Jellyfin.Plugin.JellyBridge/obj
+          rm -rf src/Jellyfin.Plugin.JellyBridge/bin
+          dotnet restore src/Jellyfin.Plugin.JellyBridge/JellyBridge.csproj
+          dotnet build src/Jellyfin.Plugin.JellyBridge/JellyBridge.csproj -c Release --no-restore
           
           # Create meta.json
           echo '{"targetAbi": "10.10.0.0", "changelog": "Jellyfin 10.10.7 release"}' > meta.json
