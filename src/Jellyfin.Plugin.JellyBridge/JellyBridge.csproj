@@ -7,7 +7,16 @@
     <RootNamespace>Jellyfin.Plugin.JellyBridge</RootNamespace>
     <AssemblyVersion>2.2.26.10</AssemblyVersion>
     <FileVersion>2.2.26.10</FileVersion>
+    <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
+    <AssemblyName>Jellyfin.Plugin.JellyBridge</AssemblyName>
   </PropertyGroup>
+
+  <!-- Assembly metadata for Jellyfin plugin identification -->
+  <ItemGroup>
+    <AssemblyAttribute Include="System.Runtime.InteropServices.GuidAttribute">
+      <_Parameter1>8ecc808c-d6e9-432f-9219-b638fbfb37e6</_Parameter1>
+    </AssemblyAttribute>
+  </ItemGroup>
 
   <!-- Normalize JellyfinVersion to specific NuGet versions -->
   <PropertyGroup>
